@@ -2,10 +2,14 @@ package web
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
+
+	"m365-copilot2api/internal/auth"
 )
 
 func (s *Server) conversations(w http.ResponseWriter, r *http.Request) {
@@ -209,13 +213,40 @@ func (s *Server) handleM365ConversationDetail(w http.ResponseWriter, r *http.Req
 		return
 	}
 	session, found := s.sessionResolver.GetConversation(conversationID)
-	if !found {
-		writeOpenAIError(w, http.StatusNotFound, "conversation_not_found", "conversation history is not available")
+	if found && len(session.ContextHistory) > 0 {
+		writeLocalConversationDetail(w, s, session)
 		return
 	}
+	if detail, acc, ok := s.lookupCloudConversationDetail(conversationID); ok {
+		log.Printf("[m365-cloud] conversation detail fallback id=%s messages=%d", conversationID, len(detail.Messages))
+		jsonOut(w, map[string]any{
+			"object":         "conversation",
+			"conversationId": detail.ConversationID,
+			"sessionId":      "",
+			"accountId":      acc.ID,
+			"accountEmail":   acc.Email,
+			"chatName":       detail.ChatName,
+			"createdAt":      detail.CreatedAt,
+			"updatedAt":      detail.UpdatedAt,
+			"messageCount":   len(detail.Messages),
+			"messages":       detail.Messages,
+			"source":         "m365-cloud",
+		})
+		return
+	}
+	if found {
+		writeLocalConversationDetail(w, s, session)
+		return
+	}
+	writeOpenAIError(w, http.StatusNotFound, "conversation_not_found", "conversation history is not available")
+}
+
+func writeLocalConversationDetail(w http.ResponseWriter, s *Server, session sessionBinding) {
 	accountEmail := ""
-	if account, ok := s.tokens.Get(session.AccountID); ok {
-		accountEmail = account.Email
+	if s != nil && s.tokens != nil {
+		if account, ok := s.tokens.Get(session.AccountID); ok {
+			accountEmail = account.Email
+		}
 	}
 	jsonOut(w, map[string]any{
 		"object":         "conversation",
@@ -228,7 +259,40 @@ func (s *Server) handleM365ConversationDetail(w http.ResponseWriter, r *http.Req
 		"updatedAt":      session.LastUsedAt,
 		"messageCount":   len(session.ContextHistory),
 		"messages":       session.ContextHistory,
+		"source":         "gateway",
 	})
+}
+
+func (s *Server) cloudClientForAccount(acc auth.AccountToken) *M365CloudClient {
+	clientID := strings.TrimSpace(os.Getenv("M365_CLIENT_ID"))
+	if clientID == "" {
+		clientID = acc.ClientID
+	}
+	if clientID == "" {
+		clientID = auth.DefaultClientID
+	}
+	tid := acc.TID
+	if tid == "" {
+		tid = "common"
+	}
+	return NewM365CloudClient(clientID, tid, acc.RefreshToken)
+}
+
+func (s *Server) lookupCloudConversationDetail(conversationID string) (cloudConversationDetail, auth.AccountToken, bool) {
+	if s == nil || s.tokens == nil {
+		return cloudConversationDetail{}, auth.AccountToken{}, false
+	}
+	for _, acc := range s.tokens.List() {
+		if strings.TrimSpace(acc.RefreshToken) == "" {
+			continue
+		}
+		detail, err := s.cloudClientForAccount(acc).GetConversation(conversationID)
+		if err != nil {
+			continue
+		}
+		return detail, acc, true
+	}
+	return cloudConversationDetail{}, auth.AccountToken{}, false
 }
 
 func conversationTitle(messages []oaiMsg) string {

@@ -97,3 +97,39 @@ func TestConversationTimestampPrefersUpdateTime(t *testing.T) {
 		t.Fatalf("timestamp=%d want %d", got, updated)
 	}
 }
+
+func TestParseCloudConversationDetail(t *testing.T) {
+	raw := []byte(`{"store":{"chatName":"store-name","rawConversationResponse":{"conversationId":"conv-cloud","chatName":"cloud-name","createTimeUtc":1,"updateTimeUtc":2,"messages":[{"author":"user","text":"hello"},{"author":"bot","text":"world"},{"author":"bot","text":"   "}]}}}`)
+	got, err := parseCloudConversationDetail("fallback", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ConversationID != "conv-cloud" || got.ChatName != "cloud-name" || len(got.Messages) != 2 {
+		t.Fatalf("got=%+v", got)
+	}
+	if got.Messages[0].Role != "user" || contentToString(got.Messages[0].Content) != "hello" {
+		t.Fatalf("user=%#v", got.Messages[0])
+	}
+	if got.Messages[1].Role != "assistant" || contentToString(got.Messages[1].Content) != "world" {
+		t.Fatalf("assistant=%#v", got.Messages[1])
+	}
+}
+
+func TestConversationDetailMissingWithoutCloudIsNotFound(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("M365_SESSION_CACHE", filepath.Join(dir, "sessions.json"))
+	t.Setenv("M365_CONVERSATION_CACHE", filepath.Join(dir, "conversations.json"))
+	store, err := auth.OpenStore(filepath.Join(dir, "accounts.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{tokens: store, sessionResolver: openSessionResolver()}
+	oldCloudClient := m365CloudClient
+	m365CloudClient = nil
+	defer func() { m365CloudClient = oldCloudClient }()
+	rec := httptest.NewRecorder()
+	s.handleM365ConversationDetail(rec, httptest.NewRequest(http.MethodGet, "/api/m365/conversations/detail?id=missing", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}

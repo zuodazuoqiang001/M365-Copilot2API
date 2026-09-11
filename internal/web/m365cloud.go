@@ -302,6 +302,113 @@ func (s stringReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+type cloudConversationDetail struct {
+	ConversationID string
+	ChatName       string
+	CreatedAt      any
+	UpdatedAt      any
+	Messages       []oaiMsg
+}
+
+func (c *M365CloudClient) GetConversation(conversationID string) (cloudConversationDetail, error) {
+	token, err := c.getAccessToken()
+	if err != nil {
+		return cloudConversationDetail{}, err
+	}
+	req, err := http.NewRequest(http.MethodGet, "https://m365.cloud.microsoft/chat/conversation/"+url.PathEscape(conversationID), nil)
+	if err != nil {
+		return cloudConversationDetail{}, fmt.Errorf("create conversation request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:148.0) Gecko/20100101 Firefox/148.0")
+	req.Header.Set("Origin", "https://m365.cloud.microsoft")
+	req.Header.Set("Referer", "https://m365.cloud.microsoft/")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return cloudConversationDetail{}, fmt.Errorf("conversation request: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return cloudConversationDetail{}, fmt.Errorf("read conversation response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return cloudConversationDetail{}, fmt.Errorf("conversation status=%d", resp.StatusCode)
+	}
+	return parseCloudConversationDetail(conversationID, body)
+}
+
+func parseCloudConversationDetail(fallbackID string, body []byte) (cloudConversationDetail, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return cloudConversationDetail{}, err
+	}
+	store, _ := payload["store"].(map[string]any)
+	var raw map[string]any
+	if store != nil {
+		raw, _ = store["rawConversationResponse"].(map[string]any)
+	}
+	if raw == nil {
+		raw, _ = payload["rawConversationResponse"].(map[string]any)
+	}
+	if raw == nil {
+		raw = payload
+	}
+	cid, _ := raw["conversationId"].(string)
+	if cid == "" {
+		cid = fallbackID
+	}
+	chatName, _ := raw["chatName"].(string)
+	if strings.TrimSpace(chatName) == "" && store != nil {
+		chatName, _ = store["chatName"].(string)
+	}
+	msgsRaw, _ := raw["messages"].([]any)
+	out := make([]oaiMsg, 0, len(msgsRaw))
+	for _, item := range msgsRaw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		author := strings.ToLower(strings.TrimSpace(fmt.Sprint(m["author"])))
+		if author == "<nil>" {
+			author = ""
+		}
+		if role, ok := m["role"].(string); ok && author == "" {
+			author = strings.ToLower(strings.TrimSpace(role))
+		}
+		role := "user"
+		switch author {
+		case "bot", "assistant":
+			role = "assistant"
+		case "system":
+			role = "system"
+		case "user", "human", "":
+			role = "user"
+		default:
+			role = "assistant"
+		}
+		text, _ := m["text"].(string)
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		out = append(out, oaiMsg{Role: role, Content: text})
+	}
+	if len(out) == 0 {
+		return cloudConversationDetail{}, fmt.Errorf("empty conversation")
+	}
+	if strings.TrimSpace(chatName) == "" {
+		chatName = conversationTitle(out)
+	}
+	return cloudConversationDetail{
+		ConversationID: cid,
+		ChatName:       chatName,
+		CreatedAt:      raw["createTimeUtc"],
+		UpdatedAt:      raw["updateTimeUtc"],
+		Messages:       out,
+	}, nil
+}
+
 var m365CloudClient *M365CloudClient
 
 func InitM365CloudClient(clientID, tenantID, refreshToken string) {
