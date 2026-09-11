@@ -1969,14 +1969,11 @@ func (s *Server) openaiChat(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 		var text strings.Builder
+		var sseSent strings.Builder
 		var streamedTools []detectedToolCall
 		first := true
 		identityFilter := newPublicIdentityStreamFilter(model)
-		emitText := func(part string) error {
-			if part == "" {
-				return nil
-			}
-			part = identityFilter.Push(part)
+		writeSSE := func(part string) error {
 			if part == "" {
 				return nil
 			}
@@ -1992,7 +1989,14 @@ func (s *Server) openaiChat(w http.ResponseWriter, r *http.Request) {
 			if err := sw.data(mustJSON(chunk)); err != nil {
 				return err
 			}
+			sseSent.WriteString(part)
 			return nil
+		}
+		emitText := func(part string) error {
+			if part == "" {
+				return nil
+			}
+			return writeSSE(identityFilter.Push(part))
 		}
 		res, err := s.chatWithAccountEvents(ctx, acc.ID, account, answerReq, func(ev chathub.StreamEvent) error {
 			if ev.Kind == "tool" && ev.ToolName != "" && len(ev.Arguments) > 0 {
@@ -2161,6 +2165,17 @@ func (s *Server) openaiChat(w http.ResponseWriter, r *http.Request) {
 			s.storeConvCache(acc.ID, convCacheModel, res, tone, body.Messages, convReused)
 			return
 		}
+		if flushed := identityFilter.Flush(); flushed != "" {
+			if err := writeSSE(flushed); err != nil {
+				return
+			}
+		}
+		if rest := chathub.StreamRemainder(sseSent.String(), res.Text); rest != "" {
+			log.Printf("[stream-backfill] id=%s sent=%d final=%d rest=%d", requestID, sseSent.Len(), len(res.Text), len(rest))
+			if err := writeSSE(rest); err != nil {
+				return
+			}
+		}
 		finishChunk := map[string]any{"id": id, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "stop"}}}
 		if res.Throttling != nil {
 			finishChunk["x_m365_throttling"] = res.Throttling
@@ -2297,8 +2312,10 @@ APPLICATION_REQUEST_AND_EVIDENCE:
 		}
 		contentFilter := newPublicIdentityStreamFilter(firstNonEmpty(body.Model, defaultPublicModelName))
 		reasoningFilter := newPublicReasoningStreamFilter()
+		var sseSent strings.Builder
 		onDelta := func(content string) error {
 			if content = contentFilter.Push(content); content != "" {
+				sseSent.WriteString(content)
 				return writeChunk(map[string]any{"content": content})
 			}
 			return nil
@@ -2375,6 +2392,7 @@ APPLICATION_REQUEST_AND_EVIDENCE:
 		}
 		if err == nil {
 			if content := contentFilter.Flush(); content != "" {
+				sseSent.WriteString(content)
 				if writeErr := writeChunk(map[string]any{"content": content}); writeErr != nil {
 					return
 				}
@@ -2386,6 +2404,12 @@ APPLICATION_REQUEST_AND_EVIDENCE:
 			}
 			res.Text = sanitizePublicAssistantTextForModel(res.Text, body.Model)
 			res.Reasoning = sanitizePublicReasoningText(res.Reasoning)
+			if rest := chathub.StreamRemainder(sseSent.String(), res.Text); rest != "" {
+				log.Printf("[stream-backfill] id=%s sent=%d final=%d rest=%d", requestID, sseSent.Len(), len(res.Text), len(rest))
+				if writeErr := writeChunk(map[string]any{"content": rest}); writeErr != nil {
+					return
+				}
+			}
 			if res.Throttling != nil && s.accountPool != nil {
 				s.accountPool.UpdateThrottling(acc.ID, res.Throttling)
 				s.logThrottlingWarning(acc.ID, res.Throttling)

@@ -1182,7 +1182,36 @@ func finalizeText(streamedText, final string, skipped int, emit func(string) err
 		return final, nil
 	}
 	log.Printf("[emitSnapshot] streamed text diverged from final result (streamed=%d final=%d skipped_snapshots=%d); using final", len(streamedText), len(final), skipped)
+	if rest := StreamRemainder(streamedText, final); rest != "" {
+		if err := emit(rest); err != nil {
+			return "", err
+		}
+	}
 	return final, nil
+}
+
+// StreamRemainder returns the portion of final that a streaming client has not
+// yet received. If sent is a prefix of final, this is the missing tail. If the
+// two strings diverged, the remainder after the shared UTF-8 prefix is returned
+// so later tokens are not dropped when snapshots rewrite the buffer.
+func StreamRemainder(sent, final string) string {
+	if final == "" || final == sent {
+		return ""
+	}
+	if sent == "" {
+		return final
+	}
+	if strings.HasPrefix(final, sent) {
+		return final[len(sent):]
+	}
+	n := commonPrefixLen(sent, final)
+	for n > 0 && n < len(final) && !utf8.RuneStart(final[n]) {
+		n--
+	}
+	if n >= len(final) {
+		return ""
+	}
+	return final[n:]
 }
 
 func BuildWSURL(acc Account, sessionID, conversationID, requestID, licenseType, scenario string) (string, error) {

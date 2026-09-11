@@ -97,8 +97,24 @@ func TestFinalizeTextPrefersFinalOnDivergence(t *testing.T) {
 	if got != final {
 		t.Fatalf("got %q, want %q", got, final)
 	}
-	if len(emitted) != 0 {
-		t.Fatalf("expected no emitted deltas on divergence, got %v", emitted)
+	if len(emitted) != 1 || emitted[0] != final {
+		t.Fatalf("emitted %v, want the remainder/full final on divergence", emitted)
+	}
+}
+
+func TestStreamRemainder(t *testing.T) {
+	cases := []struct {
+		sent, final, want string
+	}{
+		{"", "甲乙丙丁戊", "甲乙丙丁戊"},
+		{"甲乙", "甲乙丙丁戊", "丙丁戊"},
+		{"甲乙丙丁戊", "甲乙丙丁戊", ""},
+		{"**", "好的，这是完整的答案。", "好的，这是完整的答案。"},
+	}
+	for _, tc := range cases {
+		if got := StreamRemainder(tc.sent, tc.final); got != tc.want {
+			t.Fatalf("sent=%q final=%q got %q want %q", tc.sent, tc.final, got, tc.want)
+		}
 	}
 }
 
