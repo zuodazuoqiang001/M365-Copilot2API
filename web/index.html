@@ -498,6 +498,9 @@ if (response.output_text) {
       <section id="page-accounts" style="display:none">
         <div class="page-head">
           <div><h2 class="page-title">Account management</h2><p class="page-sub">Authorize and manage Microsoft accounts</p></div>
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            <button class="btn" id="acctRefreshAllBtn" type="button" onclick="refreshAllQuotas()">Refresh all quotas</button>
+          </div>
         </div>
         <div class="card" style="margin-bottom:16px">
           <div class="card-head"><span class="card-title">Add account</span></div>
@@ -566,6 +569,7 @@ if (response.output_text) {
         <div class="page-head">
           <div><h2 class="page-title">Conversation management</h2><p class="page-sub">View and clean up M365 conversations</p></div>
           <div style="display:flex;gap:8px">
+            <button class="btn" id="convRefreshBtn" type="button" onclick="loadConversations({refresh:true,page:1})">Refresh from Microsoft</button>
             <button class="btn danger" onclick="cleanupAll()">Clean up all</button>
           </div>
         </div>
@@ -578,8 +582,22 @@ if (response.output_text) {
           <div class="term-body" id="termBody"></div>
         </div>
         <div class="card">
-          <div class="card-head"><span class="card-title">Conversation list</span></div>
+          <div class="card-head">
+            <span class="card-title">Conversation list</span>
+            <div id="convKindTabs" style="display:flex;gap:8px;margin-left:auto">
+              <button type="button" class="btn btn-sm primary" data-kind="chat" id="convTabChat" onclick="loadConversations({kind:'chat',page:1})">Chat</button>
+              <button type="button" class="btn btn-sm" data-kind="image" id="convTabImage" onclick="loadConversations({kind:'image',page:1})">Images</button>
+            </div>
+          </div>
           <table class="table"><thead><tr><th>Name</th><th>Messages</th><th>Account</th><th>Last updated</th><th>Actions</th></tr></thead><tbody id="convRows"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table>
+          <div id="convPager" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;font-size:12px;color:var(--muted)">
+            <span id="convPagerMeta">Local cache</span>
+            <span style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-sm" type="button" id="convPrev" onclick="convPage(-1)">Previous</button>
+              <span id="convPagerPos">1 / 1</span>
+              <button class="btn btn-sm" type="button" id="convNext" onclick="convPage(1)">Next</button>
+            </span>
+          </div>
         </div>
       </section>
 
@@ -621,7 +639,7 @@ if (response.output_text) {
       <!-- Settings -->
       <section id="page-settings" style="display:none">
         <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Settings</h2>
-        <div class="card"><div class="card-body"><div class="form-group"><label class="form-label">Listen address</label><input class="form-input" id="setListen" placeholder="127.0.0.1:4141"></div><div class="form-group"><label class="form-label">Chat timeout (seconds)</label><input class="form-input" id="setTimeout" type="number" placeholder="120"></div><div class="form-group"><label class="form-label" for="languageSelect">Language</label><select class="form-input" id="languageSelect"><option value="en">English</option><option value="zh-CN">简体中文</option><option value="zh-TW">繁體中文</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt-BR">Português (Brasil)</option><option value="ru">Русский</option><option value="ar">العربية</option></select><p class="form-hint">Choose the language used by the administration console.</p></div><div style="margin-top:16px"><button class="btn primary" onclick="saveSettings()">Save settings</button></div></div></div>
+        <div class="card"><div class="card-body"><div class="form-group"><label class="form-label">Listen address</label><input class="form-input" id="setListen" placeholder="127.0.0.1:4141"></div><div class="form-group"><label class="form-label">Chat timeout (seconds)</label><input class="form-input" id="setTimeout" type="number" placeholder="300"></div><div class="form-group"><label class="form-label">Image timeout (seconds)</label><input class="form-input" id="setImageTimeout" type="number" placeholder="300"></div><div class="form-group"><label class="form-label" for="languageSelect">Language</label><select class="form-input" id="languageSelect"><option value="en">English</option><option value="zh-CN">简体中文</option><option value="zh-TW">繁體中文</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt-BR">Português (Brasil)</option><option value="ru">Русский</option><option value="ar">العربية</option></select><p class="form-hint">Choose the language used by the administration console.</p></div><div style="margin-top:16px"><button class="btn primary" onclick="saveSettings()">Save settings</button></div></div></div>
       </section>
     </div>
   </main>
@@ -811,6 +829,18 @@ const localeText={
   'Conversation management': {'zh-CN':'对话管理','zh-TW':'對話管理','ja':'会話管理','ko':'대화 관리','es':'Gestión de conversaciones','fr':'Gestion des conversations','de':'Unterhaltungsverwaltung','pt-BR':'Gerenciamento de conversas','ru':'Управление разговорами','ar':'إدارة المحادثات'},
   'View and clean up M365 conversations': {'zh-CN':'查看和清理 M365 对话','zh-TW':'查看和清理 M365 對話','ja':'M365 会話の表示とクリーンアップ','ko':'M365 대화 보기 및 정리','es':'Ver y limpiar conversaciones de M365','fr':'Afficher et nettoyer les conversations M365','de':'M365-Unterhaltungen anzeigen und bereinigen','pt-BR':'Ver e limpar conversas M365','ru':'Просмотр и очистка разговоров M365','ar':'عرض وتنظيف محادثات M365'},
   'Clean up all': {'zh-CN':'清理全部','zh-TW':'清理全部','ja':'すべてクリーンアップ','ko':'모두 정리','es':'Limpiar todo','fr':'Tout nettoyer','de':'Alles bereinigen','pt-BR':'Limpar tudo','ru':'Очистить всё','ar':'تنظيف الكل'},
+  'Refresh from Microsoft': {'zh-CN':'拉取最新','zh-TW':'拉取最新','ja':'最新を取得','ko':'최신 불러오기','es':'Actualizar desde Microsoft','fr':'Actualiser depuis Microsoft','de':'Von Microsoft aktualisieren','pt-BR':'Atualizar da Microsoft','ru':'Обновить из Microsoft','ar':'تحديث من Microsoft'},
+  'Refresh all quotas': {'zh-CN':'一键刷新全部额度','zh-TW':'一鍵重新整理全部額度','ja':'全クォータを更新','ko':'전체 한도 새로고침','es':'Actualizar todas las cuotas','fr':'Actualiser tous les quotas','de':'Alle Kontingente aktualisieren','pt-BR':'Atualizar todas as cotas','ru':'Обновить все квоты','ar':'تحديث كل الحصص'},
+  'Chat': {'zh-CN':'对话','zh-TW':'對話','ja':'チャット','ko':'채팅','es':'Chat','fr':'Discussion','de':'Chat','pt-BR':'Chat','ru':'Чат','ar':'محادثة'},
+  'Images': {'zh-CN':'生图','zh-TW':'生圖','ja':'画像','ko':'이미지','es':'Imágenes','fr':'Images','de':'Bilder','pt-BR':'Imagens','ru':'Изображения','ar':'صور'},
+  'Local cache': {'zh-CN':'本地缓存','zh-TW':'本機快取','ja':'ローカルキャッシュ','ko':'로컬 캐시','es':'Caché local','fr':'Cache local','de':'Lokaler Cache','pt-BR':'Cache local','ru':'Локальный кэш','ar':'ذاكرة التخزين المحلية'},
+  'Just refreshed': {'zh-CN':'刚拉取','zh-TW':'剛拉取','ja':'取得済み','ko':'방금 새로고침','es':'Recién actualizado','fr':'À jour','de':'Gerade aktualisiert','pt-BR':'Recém atualizado','ru':'Только что обновлено','ar':'تم التحديث للتو'},
+  'No image conversations': {'zh-CN':'暂无生图对话','zh-TW':'暫無生圖對話','ja':'画像会話はありません','ko':'이미지 대화 없음','es':'No hay conversaciones de imagen','fr':'Aucune conversation image','de':'Keine Bild-Unterhaltungen','pt-BR':'Nenhuma conversa de imagem','ru':'Нет разговоров с изображениями','ar':'لا توجد محادثات صور'},
+  'Fetching conversations from Microsoft…': {'zh-CN':'正在从微软拉取并写入本地…','zh-TW':'正在從 Microsoft 拉取並寫入本機…','ja':'Microsoft から取得して保存しています…','ko':'Microsoft에서 가져와 저장하는 중…','es':'Obteniendo conversaciones de Microsoft…','fr':'Récupération des conversations Microsoft…','de':'Unterhaltungen werden von Microsoft geholt…','pt-BR':'Buscando conversas da Microsoft…','ru':'Загрузка разговоров из Microsoft…','ar':'جارٍ جلب المحادثات من Microsoft…'},
+  'Refreshing…': {'zh-CN':'刷新中…','zh-TW':'重新整理中…','ja':'更新中…','ko':'새로고침 중…','es':'Actualizando…','fr':'Actualisation…','de':'Wird aktualisiert…','pt-BR':'Atualizando…','ru':'Обновление…','ar':'جارٍ التحديث…'},
+  'Previous': {'zh-CN':'上一页','zh-TW':'上一頁','ja':'前へ','ko':'이전','es':'Anterior','fr':'Précédent','de':'Zurück','pt-BR':'Anterior','ru':'Назад','ar':'السابق'},
+  'Next': {'zh-CN':'下一页','zh-TW':'下一頁','ja':'次へ','ko':'다음','es':'Siguiente','fr':'Suivant','de':'Weiter','pt-BR':'Próximo','ru':'Далее','ar':'التالي'},
+  'Image timeout (seconds)': {'zh-CN':'生图超时（秒）','zh-TW':'生圖逾時（秒）','ja':'画像タイムアウト（秒）','ko':'이미지 시간 초과(초)','es':'Tiempo de espera de imagen (segundos)','fr':'Délai d\'image (secondes)','de':'Bild-Timeout (Sekunden)','pt-BR':'Tempo limite da imagem (segundos)','ru':'Тайм-аут изображения (сек.)','ar':'مهلة الصورة (ثوانٍ)'},
   'Clear': {'zh-CN':'清空','zh-TW':'清空','ja':'クリア','ko':'지우기','es':'Borrar','fr':'Effacer','de':'Leeren','pt-BR':'Limpar','ru':'Очистить','ar':'مسح'},
   'Conversation list': {'zh-CN':'对话列表','zh-TW':'對話列表','ja':'会話一覧','ko':'대화 목록','es':'Lista de conversaciones','fr':'Liste des conversations','de':'Unterhaltungsliste','pt-BR':'Lista de conversas','ru':'Список разговоров','ar':'قائمة المحادثات'},
   'Conversation ID': {'zh-CN':'对话 ID','zh-TW':'對話 ID','ja':'会話 ID','ko':'대화 ID','es':'ID de conversación','fr':'ID de conversation','de':'Unterhaltungs-ID','pt-BR':'ID da conversa','ru':'ID разговора','ar':'معرف المحادثة'},
@@ -1174,6 +1204,28 @@ async function probeAccount(id, btn){
   if(btn){ btn.disabled=true; btn.textContent='刷新中…'; }
   try{ await api('/api/admin/models/test',{method:'POST',body:JSON.stringify({model:'m365-copilot', account_id:id})}); showNotice('额度已刷新','success'); await loadAccounts(); }catch(e){ showNotice(e.message,'error'); }finally{ if(btn){ btn.disabled=false; btn.textContent='刷新额度'; } }
 }
+async function refreshAllQuotas(){
+  const btn=$('acctRefreshAllBtn');
+  if(btn){ btn.disabled=true; btn.textContent='Refreshing…'; }
+  try{
+    const d=await api('/api/accounts');
+    const list=Array.isArray(d)?d:(d.accounts||d.data||[]);
+    const ids=[];
+    list.forEach(a=>{ const id=a&&(a.id||a.accountId); if(id) ids.push(id); });
+    if(!ids.length){ showNotice('No matching accounts','error'); return; }
+    let ok=0, fail=0, lastErr='';
+    for(let i=0;i<ids.length;i++){
+      if(btn) btn.textContent='Refreshing… '+(i+1)+'/'+ids.length;
+      try{ await api('/api/admin/models/test',{method:'POST',body:JSON.stringify({model:'m365-copilot', account_id:ids[i]})}); ok++; }
+      catch(e){ fail++; lastErr=(e&&e.message)?e.message:String(e); }
+    }
+    await loadAccounts();
+    let msg='全部额度刷新完成：成功 '+ok+' / '+ids.length;
+    if(fail) msg+='，失败 '+fail+(lastErr?('（'+lastErr+'）'):'');
+    showNotice(msg, fail?'error':'success');
+  }catch(e){ showNotice(e.message||String(e),'error'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='Refresh all quotas'; } }
+}
 async function testSingleModel(id, btn){
   const model=prompt('输入要测试的模型名','m365-copilot')?.trim(); if(!model) return;
   if(btn){ btn.disabled=true; btn.textContent='测试中…'; }
@@ -1530,30 +1582,77 @@ async function copyUseKey(){
   try{await navigator.clipboard.writeText(v);showNotice('已复制','success');}catch(e){}
 }
 
-async function loadConversations(){
+let convPageNum=1, convPageSize=20, convTotal=0, convKind='chat';
+function convFmtTime(v){
+  if(v==null||v==='')return '-';
+  const n=Number(v);
+  const d=n&&n>0?new Date(n<1e12?n*1000:n):new Date(v);
+  return isNaN(d.getTime())?'-':d.toLocaleString();
+}
+function syncConvTabs(){
+  const chat=$('convTabChat'), image=$('convTabImage');
+  if(!chat||!image)return;
+  chat.classList.toggle('primary', convKind==='chat');
+  image.classList.toggle('primary', convKind==='image');
+}
+function updateConvPager(d){
+  convTotal=Number(d.total||0);
+  convPageNum=Number(d.page||convPageNum||1)||1;
+  convPageSize=Number(d.pageSize||convPageSize||20)||20;
+  const pages=Math.max(1, Math.ceil(convTotal/convPageSize)||1);
+  if($('convPagerPos')) $('convPagerPos').textContent=convPageNum+' / '+pages;
+  if($('convPrev')) $('convPrev').disabled=convPageNum<=1;
+  if($('convNext')) $('convNext').disabled=convPageNum>=pages;
+  const src=d.source==='refresh'?'Just refreshed':'Local cache';
+  const totals=d.totals||{};
+  const when=d.refreshedAt?(' · '+new Date(d.refreshedAt).toLocaleString()):'';
+  const kindLabel=convKind==='image'?'Images':'Chat';
+  if($('convPagerMeta')) $('convPagerMeta').textContent=src+' · '+kindLabel+' '+convTotal+' · Chat '+(totals.chat||0)+' / Images '+(totals.image||0)+when;
+  if($('convTabChat')) $('convTabChat').textContent='Chat'+(totals.chat!=null?(' '+totals.chat):'');
+  if($('convTabImage')) $('convTabImage').textContent='Images'+(totals.image!=null?(' '+totals.image):'');
+  syncConvTabs();
+}
+function convPage(delta){
+  const pages=Math.max(1, Math.ceil(convTotal/convPageSize)||1);
+  const next=convPageNum+delta;
+  if(next<1||next>pages)return;
+  loadConversations({page:next});
+}
+async function loadConversations(opts){
+  opts=opts||{};
+  if(opts.page) convPageNum=opts.page;
+  if(opts.kind) convKind=opts.kind;
+  const btn=$('convRefreshBtn');
+  const rows=$('convRows');
+  if(opts.refresh && btn){ btn.disabled=true; btn.textContent='Refreshing…'; }
+  if(rows && opts.refresh) rows.innerHTML='<tr><td colspan="5" class="empty">Fetching conversations from Microsoft…</td></tr>';
   try{
-    const d=await api('/api/m365/conversations');
+    const q=new URLSearchParams({page:String(convPageNum||1), pageSize:String(convPageSize||20), kind:convKind||'chat'});
+    if(opts.refresh) q.set('refresh','1');
+    const d=await api('/api/m365/conversations?'+q.toString());
     const c=d.data||[];
-    $('convRows').innerHTML=c.length?c.map(x=>{
+    rows.innerHTML=c.length?c.map(x=>{
       const id=String(x.conversationId||'');
       const updated=x.updateTimeUtc||x.createTimeUtc;
       return `<tr class="conv-row" data-conversation-id="${esc(id)}">
         <td><button class="conv-link" type="button">${esc(x.chatName||'未命名对话')}</button><div class="conv-meta"><code>${esc(id)}</code></div></td>
         <td>${Number(x.messageCount||0)}</td>
         <td>${esc(x.accountEmail||x.accountId||'-')}</td>
-        <td style="font-size:12px;color:var(--muted)">${updated?new Date(updated).toLocaleString():'-'}</td>
+        <td style="font-size:12px;color:var(--muted)">${convFmtTime(updated)}</td>
         <td><div style="display:flex;gap:6px"><button class="btn-sm btn" data-conv-action="view">View</button><button class="btn-sm btn danger" data-conv-action="delete">Delete</button></div></td>
       </tr>`;
-    }).join(''):'<tr><td colspan="5" class="empty">No conversations</td></tr>';
-    $('convRows').querySelectorAll('.conv-row').forEach(row=>{
+    }).join(''):`<tr><td colspan="5" class="empty">${convKind==='image'?'No image conversations':'No conversations'}</td></tr>`;
+    rows.querySelectorAll('.conv-row').forEach(row=>{
       row.addEventListener('click',event=>{
         const action=event.target.closest('[data-conv-action]')?.dataset.convAction;
         if(action==='delete'){event.stopPropagation();deleteConv(row.dataset.conversationId);return;}
         openConversation(row.dataset.conversationId);
       });
     });
+    updateConvPager(d);
     applyLocale(currentLocale);
-  }catch(e){$('convRows').innerHTML=`<tr><td colspan="5" class="empty">${esc(e.message)}</td></tr>`;}
+  }catch(e){if(rows) rows.innerHTML=`<tr><td colspan="5" class="empty">${esc(e.message)}</td></tr>`;}
+  finally{ if(btn){ btn.disabled=false; btn.textContent='Refresh from Microsoft'; } }
 }
 
 function openConversation(id){window.open('/conversation?id='+encodeURIComponent(id),'_blank','noopener');}
@@ -1703,16 +1802,19 @@ async function loadSettings(){
     const d=await api('/api/admin/settings');
     const v=d.settings||{};
     $('setListen').value=v.listenAddress||'';
-    $('setTimeout').value=v.chatTimeoutSeconds||120;
+    $('setTimeout').value=v.chatTimeoutSeconds||300;
+    if($('setImageTimeout')) $('setImageTimeout').value=v.imageTimeoutSeconds||300;
   }catch(e){showNotice(e.message,'error');}
 }
 async function saveSettings(){
   try{
     const listen=$('setListen').value.trim();
     const timeout=$('setTimeout').value.trim();
+    const imageTimeout=$('setImageTimeout')?$('setImageTimeout').value.trim():'';
     const body={};
     if(listen)body.listenAddress=listen;
     if(timeout)body.chatTimeoutSeconds=parseInt(timeout);
+    if(imageTimeout)body.imageTimeoutSeconds=parseInt(imageTimeout);
     await api('/api/admin/settings',{method:'PUT',body:JSON.stringify(body)});
     showNotice('设置已保存','success');
   }catch(e){showNotice(e.message,'error');}

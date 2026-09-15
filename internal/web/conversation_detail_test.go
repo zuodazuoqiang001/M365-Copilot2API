@@ -15,6 +15,7 @@ import (
 
 func TestConversationListAndDetailUseCompleteLocalHistory(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("M365_DATA_DIR", dir)
 	t.Setenv("M365_SESSION_CACHE", filepath.Join(dir, "sessions.json"))
 	t.Setenv("M365_CONVERSATION_CACHE", filepath.Join(dir, "conversations.json"))
 	store, err := auth.OpenStore(filepath.Join(dir, "accounts.json"))
@@ -117,6 +118,7 @@ func TestParseCloudConversationDetail(t *testing.T) {
 
 func TestConversationDetailMissingWithoutCloudIsNotFound(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("M365_DATA_DIR", dir)
 	t.Setenv("M365_SESSION_CACHE", filepath.Join(dir, "sessions.json"))
 	t.Setenv("M365_CONVERSATION_CACHE", filepath.Join(dir, "conversations.json"))
 	store, err := auth.OpenStore(filepath.Join(dir, "accounts.json"))
